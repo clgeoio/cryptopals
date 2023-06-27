@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::fs::read_to_string;
+    use std::{collections::HashMap, fs::read_to_string};
 
     use aes::{
         cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit},
@@ -9,7 +9,6 @@ mod tests {
     use base64::{engine::general_purpose, Engine};
     use pretty_assertions::assert_eq;
     use rand::Rng;
-    use std::slice::Chunks;
 
     use crate::shared::{
         analysis::{freq_analysis, freq_analysis_iter, most_likely_encoded},
@@ -143,5 +142,34 @@ mod tests {
             .collect::<String>();
 
         print!("{}", full);
+    }
+
+    #[test]
+    fn test_challenge_8() {
+        let j = read_to_string("src/set1/8.txt").unwrap();
+        let input = j.lines().map(|s| hex_to_bytes(s)).map(Result::unwrap);
+
+        // loop through each byte set
+        // take 16 block bytes and add to freq hashmap with block as key
+        // choose the one that has the most repeating keys
+
+        let x = input
+            .map(|bytes| {
+                let mut map = HashMap::new();
+                bytes.as_slice().chunks(16).for_each(|c| {
+                    let key = c.to_owned();
+                    *map.entry(key).or_insert(0) += 1;
+                });
+
+                if map.values().any(|f| f > &1) {
+                    return Some(bytes);
+                }
+                return None;
+            })
+            .filter(|f| f.is_some())
+            .map(|b| bytes_to_hex(b.unwrap()))
+            .collect::<Vec<String>>();
+
+        println!("{:?}", x);
     }
 }
