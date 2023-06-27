@@ -141,8 +141,7 @@ mod tests {
                 String::from_iter(block.iter().map(|f| *f as char))
             })
             .collect::<String>();
-        // cipher.decrypt_block(&mut block);
 
-        print!("{:?}", full);
+        print!("{}", full);
     }
 }
