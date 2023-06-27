@@ -2,13 +2,18 @@
 mod tests {
     use std::fs::read_to_string;
 
+    use aes::{
+        cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit},
+        Aes128,
+    };
     use base64::{engine::general_purpose, Engine};
     use pretty_assertions::assert_eq;
     use rand::Rng;
+    use std::slice::Chunks;
 
     use crate::shared::{
         analysis::{freq_analysis, freq_analysis_iter, most_likely_encoded},
-        conversion::{bytes_to_base64, bytes_to_hex, hex_to_bytes},
+        conversion::{bytes_to_base64, bytes_to_hex, hex_to_bytes, transpose},
         hamming::{hamming_distance, hamming_distance_bytes},
         xor::{xor, xor_with_key, xor_with_repeating_key},
     };
@@ -118,13 +123,26 @@ mod tests {
         println!("{:?}", String::from_iter(key));
     }
 
-    fn transpose(ct: &[u8], key_size: usize, offset: usize) -> Vec<u8> {
-        let mut transposed = Vec::new();
-        let mut i = 0;
-        while i + offset < ct.len() {
-            transposed.push(ct[i + offset]);
-            i += key_size;
-        }
-        transposed
+    #[test]
+    fn test_challenge_7() {
+        let key = "YELLOW SUBMARINE".as_bytes();
+        let decoded = general_purpose::STANDARD
+            .decode(&read_to_string("src/set1/7.txt").unwrap().replace("\n", ""))
+            .unwrap();
+
+        let cipher = Aes128::new(key.into());
+
+        let full = decoded
+            .as_slice()
+            .chunks(16)
+            .map(|chunk| {
+                let mut block = *GenericArray::from_slice(chunk);
+                cipher.decrypt_block(&mut block);
+                String::from_iter(block.iter().map(|f| *f as char))
+            })
+            .collect::<String>();
+        // cipher.decrypt_block(&mut block);
+
+        print!("{:?}", full);
     }
 }

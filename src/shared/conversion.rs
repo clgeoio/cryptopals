@@ -63,3 +63,13 @@ fn encode_chunk(chunk: Vec<u8>) -> Vec<char> {
 
     out
 }
+
+pub fn transpose(ct: &[u8], key_size: usize, offset: usize) -> Vec<u8> {
+    let mut transposed = Vec::new();
+    let mut i = 0;
+    while i + offset < ct.len() {
+        transposed.push(ct[i + offset]);
+        i += key_size;
+    }
+    transposed
+}
