@@ -2,15 +2,12 @@
 mod tests {
     use std::{collections::HashMap, fs::read_to_string};
 
-    use aes::{
-        cipher::{generic_array::GenericArray, BlockDecrypt, KeyInit},
-        Aes128,
-    };
     use base64::{engine::general_purpose, Engine};
     use pretty_assertions::assert_eq;
     use rand::Rng;
 
     use crate::shared::{
+        aes::decrypt_aes,
         analysis::{freq_analysis, freq_analysis_iter, most_likely_encoded},
         conversion::{bytes_to_base64, bytes_to_hex, hex_to_bytes, transpose},
         hamming::{hamming_distance, hamming_distance_bytes},
@@ -129,17 +126,7 @@ mod tests {
             .decode(&read_to_string("src/set1/7.txt").unwrap().replace("\n", ""))
             .unwrap();
 
-        let cipher = Aes128::new(key.into());
-
-        let full = decoded
-            .as_slice()
-            .chunks(16)
-            .map(|chunk| {
-                let mut block = *GenericArray::from_slice(chunk);
-                cipher.decrypt_block(&mut block);
-                String::from_iter(block.iter().map(|f| *f as char))
-            })
-            .collect::<String>();
+        let full = String::from_utf8(decrypt_aes(key, decoded)).unwrap();
 
         print!("{}", full);
     }
