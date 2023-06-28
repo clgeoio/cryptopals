@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, fs::read_to_string};
+    use std::fs::read_to_string;
 
     use base64::{engine::general_purpose, Engine};
     use pretty_assertions::assert_eq;
     use rand::Rng;
 
     use crate::shared::{
-        aes::decrypt_aes,
+        aes::{decrypt_ecb, detect_ebc},
         analysis::{freq_analysis, freq_analysis_iter, most_likely_encoded},
         conversion::{bytes_to_base64, bytes_to_hex, hex_to_bytes, transpose},
         hamming::{hamming_distance, hamming_distance_bytes},
@@ -126,7 +126,7 @@ mod tests {
             .decode(&read_to_string("src/set1/7.txt").unwrap().replace("\n", ""))
             .unwrap();
 
-        let full = String::from_utf8(decrypt_aes(key, decoded)).unwrap();
+        let full = String::from_utf8(decrypt_ecb(key, decoded)).unwrap();
 
         print!("{}", full);
     }
@@ -139,22 +139,9 @@ mod tests {
         // loop through each byte set
         // take 16 block bytes and add to freq hashmap with block as key
         // choose the one that has the most repeating keys
-
         let x = input
-            .map(|bytes| {
-                let mut map = HashMap::new();
-                bytes.as_slice().chunks(16).for_each(|c| {
-                    let key = c.to_owned();
-                    *map.entry(key).or_insert(0) += 1;
-                });
-
-                if map.values().any(|f| f > &1) {
-                    return Some(bytes);
-                }
-                return None;
-            })
-            .filter(|f| f.is_some())
-            .map(|b| bytes_to_hex(b.unwrap()))
+            .filter(|bytes| detect_ebc(&bytes))
+            .map(|b| bytes_to_hex(b))
             .collect::<Vec<String>>();
 
         println!("{:?}", x);

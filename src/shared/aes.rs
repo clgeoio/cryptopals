@@ -1,11 +1,14 @@
+use std::collections::HashMap;
+
 use aes::{
     cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, KeyInit},
     Aes128,
 };
+use rand::{distributions::Standard, Rng};
 
 use super::xor::xor;
 
-pub fn decrypt_aes(key: &[u8], bytes: Vec<u8>) -> Vec<u8> {
+pub fn decrypt_ecb(key: &[u8], bytes: Vec<u8>) -> Vec<u8> {
     let cipher = Aes128::new(key.into());
 
     let full = bytes
@@ -20,7 +23,7 @@ pub fn decrypt_aes(key: &[u8], bytes: Vec<u8>) -> Vec<u8> {
     full
 }
 
-pub fn encrypt_aes(key: &[u8], bytes: Vec<u8>) -> Vec<u8> {
+pub fn encrypt_ecb(key: &[u8], bytes: Vec<u8>) -> Vec<u8> {
     let cipher = Aes128::new(key.into());
 
     let full = bytes
@@ -35,16 +38,12 @@ pub fn encrypt_aes(key: &[u8], bytes: Vec<u8>) -> Vec<u8> {
     full
 }
 
-pub fn pkcs7_padding(bytes: &[u8], len: usize) -> Vec<u8> {
-    assert!(len < 256);
+pub fn pkcs7_padding(bytes: &[u8], block_size: usize) -> Vec<u8> {
+    let bs = block_size;
     let mut v = Vec::from(bytes);
-    let diff = len - bytes.len();
-    if diff <= 0 {
-        return v;
-    } else {
-        v.resize_with(len, || diff as u8);
-        return v;
-    }
+    let diff = bs - (bytes.len() % bs);
+    v.resize_with(bytes.len() + diff, || diff as u8);
+    v
 }
 
 pub fn encrypt_cbc(key: &[u8], bytes: Vec<u8>, iv: &[u8]) -> Vec<u8> {
@@ -96,4 +95,41 @@ pub fn decrypt_cbc(key: &[u8], bytes: Vec<u8>, iv: &[u8]) -> Vec<u8> {
         });
 
     return full.1;
+}
+
+pub fn detect_ebc(input: &[u8]) -> bool {
+    let mut map = HashMap::new();
+    input.chunks(16).for_each(|c| {
+        let key = c.to_owned();
+        *map.entry(key).or_insert(0) += 1;
+    });
+
+    if map.values().any(|f| f > &1) {
+        return true;
+    }
+    return false;
+}
+
+pub fn encryption_oracle(input: &[u8]) -> (bool, Vec<u8>) {
+    let mut rng = rand::thread_rng();
+    // do all the random things
+    let key: [u8; 16] = rng.gen();
+    let prefix_size = rng.gen_range(5..10);
+    let suffix_size = rng.gen_range(5..10);
+    let prefix: Vec<u8> = (&mut rng).sample_iter(Standard).take(prefix_size).collect();
+    let suffix: Vec<u8> = (&mut rng).sample_iter(Standard).take(suffix_size).collect();
+    let ecb_mode: bool = rng.gen();
+
+    let mut plain_text = [prefix, input.to_vec(), suffix].concat();
+    plain_text = pkcs7_padding(&plain_text, 16);
+
+    if ecb_mode {
+        let iv: [u8; 16] = rng.gen();
+        let encrypted = encrypt_cbc(&key, plain_text, &iv);
+
+        return (false, encrypted);
+    } else {
+        let encrypted = encrypt_ecb(&key, plain_text);
+        return (true, encrypted);
+    }
 }
