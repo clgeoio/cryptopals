@@ -3,10 +3,14 @@ mod tests {
     use std::fs::read_to_string;
 
     use base64::{engine::general_purpose, Engine};
+    use rand::Rng;
 
-    use crate::shared::aes::{
-        decrypt_cbc, decrypt_ecb, detect_block_and_suffix_size, detect_ebc, encrypt_ecb,
-        get_encryption_oracle, get_encryption_oracle_with_suffix, pkcs7_padding,
+    use crate::shared::{
+        aes::{
+            decrypt_cbc, decrypt_ecb, detect_block_and_suffix_size, detect_ebc, encrypt_ecb,
+            get_encryption_oracle, get_encryption_oracle_with_suffix, pkcs7_padding,
+        },
+        kv::profile_for,
     };
 
     #[test]
@@ -123,5 +127,41 @@ mod tests {
 
         let recovered = String::from_utf8(r).unwrap();
         println!("{}", recovered);
+    }
+
+    #[test]
+    fn test_challenge_5() {
+        let mut rng = rand::thread_rng();
+        // do all the random things
+        let key: [u8; 16] = rng.gen();
+
+        // what we are going to do is:
+        // make our email the correct length such that  "user\x0Y" is on the last block, full of padding bytes
+        // then add a full block size of `admin\07\` then switch the rows and drop the value.
+
+        // email=foo@bar.comroleadmin&uid=10&role=user is length 34, which means
+        // 16 - (34%16) = 14 padding bytes. so only the last 'er' is in the last block.
+        // If we add 2 bytes to the email, the `user` section wiljl be padded.
+        //println!("{:?}", profile_for("foo12@bar.com"));
+        // Then add a whole block of `
+        let j = [
+            "foo12@bar.".as_bytes(),
+            &pkcs7_padding("admin".as_bytes(), 16),
+            "com".as_bytes(),
+        ]
+        .concat();
+        let input = String::from_utf8(j.clone()).unwrap();
+        let f = profile_for(&input);
+        let profile = f.as_bytes();
+
+        let e = encrypt_ecb(&key, pkcs7_padding(&profile, 16));
+        println!("{:?}", e.len());
+
+        // swap blocks 2 & 3, drop block 4.
+        let mix: Vec<u8> = [e[0..16].to_vec(), e[32..48].to_vec(), e[16..32].to_vec()].concat();
+
+        let dec = decrypt_ecb(&key, mix);
+
+        println!("{:?}", String::from_utf8(dec.clone()).unwrap());
     }
 }
