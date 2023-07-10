@@ -4,6 +4,7 @@ use aes::{
     cipher::{generic_array::GenericArray, BlockDecrypt, BlockEncrypt, KeyInit},
     Aes128,
 };
+use base64::{engine::general_purpose, Engine};
 use rand::{distributions::Standard, Rng};
 
 use super::xor::xor;
@@ -110,26 +111,78 @@ pub fn detect_ebc(input: &[u8]) -> bool {
     return false;
 }
 
-pub fn encryption_oracle(input: &[u8]) -> (bool, Vec<u8>) {
+pub fn get_encryption_oracle() -> impl Fn(&[u8]) -> (bool, Vec<u8>) {
     let mut rng = rand::thread_rng();
     // do all the random things
     let key: [u8; 16] = rng.gen();
-    let prefix_size = rng.gen_range(5..10);
-    let suffix_size = rng.gen_range(5..10);
-    let prefix: Vec<u8> = (&mut rng).sample_iter(Standard).take(prefix_size).collect();
-    let suffix: Vec<u8> = (&mut rng).sample_iter(Standard).take(suffix_size).collect();
-    let ecb_mode: bool = rng.gen();
 
-    let mut plain_text = [prefix, input.to_vec(), suffix].concat();
-    plain_text = pkcs7_padding(&plain_text, 16);
+    let encryption_oracle = move |input: &[u8]| {
+        let mut rng = rand::thread_rng();
+        let prefix_size = rng.gen_range(5..10);
+        let suffix_size = rng.gen_range(5..10);
+        let prefix: Vec<u8> = (&mut rng).sample_iter(Standard).take(prefix_size).collect();
+        let suffix: Vec<u8> = (&mut rng).sample_iter(Standard).take(suffix_size).collect();
+        let cbc_mode: bool = rng.gen();
 
-    if ecb_mode {
-        let iv: [u8; 16] = rng.gen();
-        let encrypted = encrypt_cbc(&key, plain_text, &iv);
+        let mut plain_text = [prefix, input.to_vec(), suffix].concat();
+        plain_text = pkcs7_padding(&plain_text, 16);
 
-        return (false, encrypted);
-    } else {
+        if cbc_mode {
+            let iv: [u8; 16] = rng.gen();
+            let encrypted = encrypt_cbc(&key, plain_text, &iv);
+
+            return (false, encrypted);
+        } else {
+            let encrypted = encrypt_ecb(&key, plain_text);
+            return (true, encrypted);
+        }
+    };
+
+    return encryption_oracle;
+}
+
+pub fn get_encryption_oracle_with_suffix() -> impl Fn(&[u8]) -> Vec<u8> {
+    let mut rng = rand::thread_rng();
+    let suffix = general_purpose::STANDARD
+    .decode("Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
+    .unwrap();
+
+    // do all the random things
+    let key: [u8; 16] = rng.gen();
+
+    let encryption_oracle = move |input: &[u8]| {
+        let mut plain_text = [input.to_vec(), suffix.to_vec()].concat();
+        plain_text = pkcs7_padding(&plain_text, 16);
+
         let encrypted = encrypt_ecb(&key, plain_text);
-        return (true, encrypted);
+        return encrypted;
+    };
+
+    return encryption_oracle;
+}
+
+#[derive(Debug)]
+pub struct EncSize {
+    pub block_size: usize,
+    pub suffix_size: usize,
+}
+
+pub fn detect_block_and_suffix_size(oracle: impl Fn(&[u8]) -> Vec<u8>) -> EncSize {
+    let mut i = 0;
+    loop {
+        let l1 = oracle(&vec![0; i]).len();
+        let l2 = oracle(&vec![0; i + 1]).len();
+
+        if l1 < l2 {
+            break EncSize {
+                block_size: l2 - l1,
+                suffix_size: l1 - i,
+            };
+        }
+
+        if i > 2000 {
+            panic!("TOO LARGE!")
+        }
+        i += 1;
     }
 }
